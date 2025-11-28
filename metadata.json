@@ -1,0 +1,5 @@
+{
+  "name": "FOOTSTEP Management Portal",
+  "description": "A dual-interface management platform for FOOTSTEP artist management, featuring an internal dashboard for analytics and task tracking, and a client portal for communication and project management. Built with a lean startup philosophy.",
+  "requestFramePermissions": []
+}
