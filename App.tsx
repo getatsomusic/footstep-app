@@ -6,7 +6,18 @@ import { InternalDashboard } from './components/InternalDashboard';
 import { ClientPortal } from './components/ClientPortal';
 import { Bell, CheckCircle, MessageCircle, X } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
-import { getProjectStats, saveProjectStats } from './services/databaseService';
+import { 
+    getProjectStats, 
+    saveProjectStats, 
+    fetchAllProjects, 
+    fetchAllTasks, 
+    addTaskToDB, 
+    createProject, 
+    fetchUserProfile, 
+    fetchAllUsers, // Vi lägger till denna också för admins
+    updateUserInDB, // Ny funktion för att uppdatera användarprofil
+    deleteUserFromDB // Ny funktion för att ta bort användare
+} from './services/databaseService';
 
 // --- INITIAL MOCK DATA ---
 const INITIAL_PROJECTS: Project[] = [];
@@ -133,6 +144,31 @@ const App: React.FC = () => {
           });
       }
   }, [currentUser]);
+
+    // --- FETCH ALL INITIAL DATA (PROJECTS, TASKS, USERS) ---
+useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    const loadInitialData = async () => {
+        // Kör alla hämtningar parallellt för snabb laddning
+        const [projectsData, tasksData, usersData] = await Promise.all([
+            fetchAllProjects(),
+            fetchAllTasks(),
+            fetchAllUsers(), // Hämta alla användare/profiler
+            // Lägg till fetchAllEvents(), fetchAllMessages(), etc. här senare
+        ]);
+        
+        setProjects(projectsData);
+        setTasks(tasksData);
+        setUsers(usersData); // Sätt den globala användarlistan
+    };
+
+    if (currentUser && currentUser.role !== UserRole.CLIENT) {
+        // Endast admin/manager hämtar all data initialt
+        loadInitialData();
+    }
+    // För klienter hämtas data baserat på deras projectId (gjort senare)
+}, [currentUser]);
 
   useEffect(() => {
       if (toasts.length > 0) {
