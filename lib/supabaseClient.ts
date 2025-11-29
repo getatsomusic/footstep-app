@@ -1,18 +1,19 @@
 import { createClient } from '@supabase/supabase-js'
 
-// 1. Skapa variabler för URL och Key
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+// Hämta från Vercel Environment Variables
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
-// 2. Exportera en flagga som berättar om konfigurationen lyckades
-// App.tsx använder denna för att undvika att krascha om nycklar saknas.
+// Kontrollera om konfigurationen är korrekt
 export const isSupabaseConfigured = !!supabaseUrl && !!supabaseAnonKey;
 
 if (!isSupabaseConfigured) {
   console.error('Supabase URLs saknas! Kontrollera Vercel Environment Variables.');
+  console.error('NEXT_PUBLIC_SUPABASE_URL:', supabaseUrl ? 'finns' : 'SAKNAS');
+  console.error('NEXT_PUBLIC_SUPABASE_ANON_KEY:', supabaseAnonKey ? 'finns' : 'SAKNAS');
 }
 
-// 3. Exportera klienten (skapa den bara om konfigurerad)
+// Skapa Supabase-klienten
 export const supabase = isSupabaseConfigured 
   ? createClient(supabaseUrl, supabaseAnonKey) 
-  : ({ auth: { onAuthStateChange: () => ({ subscription: { unsubscribe: () => {} } }) } } as any);
+  : ({ auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }) } } as any);
