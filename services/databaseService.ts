@@ -1,6 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
-import { Project, ProjectStats, Task, User, UserRole, ClientRole } from '../types';
-import { PostgrestError } from '@supabase/supabase-js'; // Lägg till denna import för bättre felhantering
+import { Project, ProjectStats, Task, User, UserRole, ClientRole, AppFile } from '../types';
+import { PostgrestError } from '@supabase/supabase-js';
 
 // --- SERVICE FUNCTIONS ---
 
@@ -8,10 +8,10 @@ import { PostgrestError } from '@supabase/supabase-js'; // Lägg till denna impo
 export const getProjectStats = async (projectId: string): Promise<ProjectStats | null> => {
     if (!isSupabaseConfigured) return null;
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabase!
             .from('project_stats')
             .select('*')
-            .eq('project_id', projectId) // Mapping till snake_case
+            .eq('project_id', projectId) // Måste matcha Supabase kolumnnamn
             .single();
 
         if (error) {
@@ -19,7 +19,7 @@ export const getProjectStats = async (projectId: string): Promise<ProjectStats |
             throw error;
         }
 
-        // Map database fields tillbaka till TypeScript interface (camelCase)
+        // Map database fields (snake_case) tillbaka till TypeScript interface (camelCase)
         return {
             projectId: data.project_id,
             projectName: data.project_name,
@@ -45,75 +45,103 @@ export const saveProjectStats = async (stats: ProjectStats): Promise<boolean> =>
             followers: stats.followers,
             mentions: stats.mentions
         };
-
-        const { error } = await supabase
+        
+        const { error, status } = await supabase!
             .from('project_stats')
-            .upsert(dbPayload, { onConflict: 'project_id' });
+            .upsert(dbPayload, { onConflict: 'project_id' }); // Använd upsert för att skapa/uppdatera
 
         if (error) throw error;
-        return true;
+        return status === 201 || status === 204; // 201 Created, 204 No Content (Success)
     } catch (error) {
         console.error('Error saving project stats:', error);
         return false;
     }
 };
 
-// 2. FETCH USER PROFILE (FIXAD: Hanterar null-värden)
-export async function fetchUserProfile(userId: string): Promise<User | null> {
+// 2. USER FUNCTIONS
+export async function fetchUserProfile(uid: string): Promise<User | null> {
     if (!isSupabaseConfigured) return null;
+    const { data, error } = await supabase!
+        .from('users')
+        .select('*')
+        .eq('id', uid)
+        .single();
+    
+    if (error && (error as PostgrestError).code !== 'PGRST116') {
+        console.error('Kunde inte hämta användarprofil:', error);
+        return null;
+    }
+    
+    // Map data from Supabase (assuming same column names)
+    return data ? (data as User) : null;
+}
+
+export async function fetchAllUsers(): Promise<User[]> {
+    if (!isSupabaseConfigured) return [];
+    const { data, error } = await supabase!
+        .from('users')
+        .select('*');
+    if (error) {
+        console.error('Kunde inte hämta alla användare:', error);
+        return [];
+    }
+    return (data as User[]) || [];
+}
+
+export async function updateUserInDB(updatedUser: Partial<User>): Promise<boolean> {
+    if (!isSupabaseConfigured || !updatedUser.id) return false;
     try {
-        const { data: profile, error } = await supabase
-            .from('profiles')
-            .select('id, email, name, role, client_role, project_id, avatar') // Välj kolumner du behöver
-            .eq('id', userId)
-            .single();
-
-        if (error) {
-            if (error.code === 'PGRST116') return null; // Profil hittades ej
-            throw error;
-        }
-
-        if (profile) {
-            // Mappar databasprofilen (snake_case) till din app-User-typ (camelCase)
-            return {
-                id: profile.id,
-                email: profile.email || '', // FIX: Fallback för null
-                name: profile.name || 'Användare', // FIX: Fallback för null
-                role: (profile.role as UserRole) || UserRole.CLIENT, // FIX: Fallback för null
-                clientRole: (profile.client_role as ClientRole) || ClientRole.GUEST, // FIX: Fallback för null
-                projectId: profile.project_id || null, // FIX: Tillåter null/saknat värde
-                avatar: profile.avatar || '', // FIX: Fallback för null
-            } as User;
-        }
-        return null;
+        const { error, status } = await supabase!
+            .from('users')
+            .update(updatedUser)
+            .eq('id', updatedUser.id);
+        
+        if (error) throw error;
+        return status === 204;
     } catch (error) {
-        console.error('Kunde inte hämta profil:', error);
-        return null;
+        console.error('Kunde inte uppdatera användare:', error);
+        return false;
     }
 }
 
+export async function deleteUserFromDB(userId: string): Promise<boolean> {
+    if (!isSupabaseConfigured) return false;
+    try {
+        const { error, status } = await supabase!
+            .from('users')
+            .delete()
+            .eq('id', userId);
+        
+        if (error) throw error;
+        return status === 204;
+    } catch (error) {
+        console.error('Kunde inte ta bort användare:', error);
+        return false;
+    }
+}
 
 // 3. PROJECT FUNCTIONS
 export async function fetchAllProjects(): Promise<Project[]> {
     if (!isSupabaseConfigured) return [];
-    const { data, error } = await supabase
+    const { data, error } = await supabase!
         .from('projects')
         .select('*');
     if (error) {
         console.error('Kunde inte hämta projekt:', error);
         return [];
     }
-    // OBS: Antar att kolumnnamnen i Supabase (t.ex. 'id', 'name') matchar din Project-typ
     return (data as Project[]) || []; 
 }
 
-export async function createProject(newProject: Project): Promise<Project | null> {
+export async function createProject(newProject: Omit<Project, 'id'>): Promise<Project | null> {
     if (!isSupabaseConfigured) return null;
-    const { data, error } = await supabase
+    // Låt Supabase generera ID:et om inte ett skickas med.
+    const { data, error } = await supabase!
         .from('projects')
-        .insert({ id: newProject.id, name: newProject.name }) // Mappa manuellt vid behov
+        .insert(newProject) 
         .select()
         .single();
+        
     if (error) {
         console.error('Kunde inte skapa projekt:', error);
         return null;
@@ -124,22 +152,19 @@ export async function createProject(newProject: Project): Promise<Project | null
 // 4. TASK FUNCTIONS
 export async function fetchAllTasks(): Promise<Task[]> {
     if (!isSupabaseConfigured) return [];
-    const { data, error } = await supabase
+    const { data, error } = await supabase!
         .from('tasks')
         .select('*');
     if (error) {
         console.error('Kunde inte hämta uppgifter:', error);
         return [];
     }
-    // OBS: Antar att kolumnnamnen i Supabase matchar din Task-typ
     return (data as Task[]) || [];
 }
 
-export async function addTaskToDB(task: Task): Promise<Task | null> {
+export async function addTaskToDB(task: Omit<Task, 'id'>): Promise<Task | null> {
     if (!isSupabaseConfigured) return null;
-    // Du kanske måste mappa Task-objektet till snake_case här,
-    // men vi testar direktinsättning först.
-    const { data, error } = await supabase
+    const { data, error } = await supabase!
         .from('tasks')
         .insert(task)
         .select()
@@ -151,92 +176,88 @@ export async function addTaskToDB(task: Task): Promise<Task | null> {
     return data as Task;
 }
 
-// --- USER MANAGEMENT FUNCTIONS ---
-
-// 1. Fetch All Users (FIXAD: Hanterar null-värden)
-export const fetchAllUsers = async (): Promise<User[]> => {
-    // OBS! Din RLS-policy måste tillåta administratörer/ägare att läsa alla profiler
-    if (!isSupabaseConfigured) return [];
-    try {
-        const { data, error } = await supabase
-            .from('profiles') 
-            .select('*');
-
-        if (error) throw error;
-
-        // Mappa Supabase-profiler till din interna User-typ
-        const users: User[] = data.map(profile => ({
-            id: profile.id,
-            email: profile.email || '', // FIX: Fallback för null
-            name: profile.name || 'Användare', // FIX: Fallback för null
-            role: (profile.role as UserRole) || UserRole.CLIENT, // FIX: Fallback för null
-            clientRole: (profile.client_role as ClientRole) || ClientRole.GUEST, // FIX: Fallback för null
-            projectId: profile.project_id || null, // FIX: Tillåter null/saknat värde
-            avatar: profile.avatar || '', // FIX: Fallback för null
-        }));
-        
-        return users;
-    } catch (error) {
-        console.error("Error fetching all users:", error);
-        return [];
-    }
-}
-
-// 2. Update User 
-export const updateUserInDB = async (user: Partial<User>): Promise<User | null> => {
-    if (!isSupabaseConfigured || !user.id) return null;
-    try {
-        // Mappa din camelCase-User-typ till snake_case för Supabase
-        const updateObject = {
-            name: user.name,
-            role: user.role,
-            client_role: user.clientRole,
-            project_id: user.projectId,
-            avatar: user.avatar,
-        };
-
-        const { data, error } = await supabase
-            .from('profiles')
-            .update(updateObject)
-            .eq('id', user.id)
-            .select()
-            .single();
-
-        if (error) throw error;
-        
-        // Mappa tillbaka den uppdaterade profilen till User-typen
-        return data ? {
-            id: data.id,
-            email: data.email,
-            name: data.name,
-            role: data.role,
-            clientRole: data.client_role,
-            projectId: data.project_id,
-            avatar: data.avatar,
-        } as User : null;
-
-    } catch (error) {
-        console.error("Error updating user:", error);
-        return null;
-    }
-}
-
-// 3. Delete User
-export const deleteUserFromDB = async (userId: string): Promise<boolean> => {
+export async function updateTaskInDB(task: Partial<Task> & { id: string }): Promise<boolean> {
     if (!isSupabaseConfigured) return false;
     try {
-        // OBS: Detta tar bort PROFILEN, inte Supabase Authentication-användaren.
-        // För att ta bort AUTH-användaren krävs admin-behörigheter, ofta via en Supabase Function.
-        const { error } = await supabase
-            .from('profiles')
-            .delete()
-            .eq('id', userId);
-
-        if (error) throw error;
+        const { error, status } = await supabase!
+            .from('tasks')
+            .update(task)
+            .eq('id', task.id);
         
-        return true;
+        if (error) throw error;
+        return status === 204;
     } catch (error) {
-        console.error("Error deleting user:", error);
+        console.error('Kunde inte uppdatera uppgift:', error);
         return false;
     }
 }
+
+// 5. FILE HANDLING (Supabase Storage)
+// OBS: Denna funktion kräver att du har en Supabase Storage Bucket!
+export const handleUploadFile = async (file: File, projectId: string, userId: string): Promise<AppFile | null> => {
+    if (!isSupabaseConfigured) return null;
+    const filePath = `${projectId}/${userId}/${Date.now()}-${file.name}`;
+    
+    try {
+        // Ladda upp filen till Supabase Storage
+        const { data: uploadData, error: uploadError } = await supabase!.storage
+            .from('app-files') // Byt ut 'app-files' mot ditt Bucket-namn
+            .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        // Få den publika URL:en (eller signerad URL om du använder RLS)
+        const { data: urlData } = supabase!.storage
+            .from('app-files')
+            .getPublicUrl(filePath);
+
+        // Spara filmetadata i databasen (t.ex. i en 'files'-tabell)
+        const newFile: Omit<AppFile, 'id'> = {
+            name: file.name,
+            projectId: projectId,
+            uploadedBy: userId,
+            url: urlData.publicUrl,
+            mimeType: file.type,
+            timestamp: new Date().toISOString()
+        };
+
+        const { data: fileData, error: fileError } = await supabase!
+            .from('files') // Byt ut 'files' mot ditt tabellnamn för filmetadata
+            .insert(newFile)
+            .select()
+            .single();
+
+        if (fileError) throw fileError;
+
+        return fileData as AppFile;
+
+    } catch (error) {
+        console.error("Fel vid filuppladdning eller metadata-lagring:", error);
+        return null;
+    }
+};
+
+export const handleDeleteFile = async (fileId: string, filePath: string): Promise<boolean> => {
+    if (!isSupabaseConfigured) return false;
+    try {
+        // 1. Ta bort från databasen (metadata)
+        const { error: dbError } = await supabase!
+            .from('files') // Ditt metadata-tabellnamn
+            .delete()
+            .eq('id', fileId);
+
+        if (dbError) throw dbError;
+
+        // 2. Ta bort från Storage
+        const { error: storageError } = await supabase!.storage
+            .from('app-files') // Ditt Bucket-namn
+            .remove([filePath]); // filePath måste vara sökvägen till filen i storage
+
+        if (storageError) throw storageError;
+
+        return true;
+    } catch (error) {
+        console.error("Fel vid filborttagning:", error);
+        return false;
+    }
+};
