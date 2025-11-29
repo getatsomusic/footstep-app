@@ -150,3 +150,93 @@ export async function addTaskToDB(task: Task): Promise<Task | null> {
     }
     return data as Task;
 }
+
+// --- USER MANAGEMENT FUNCTIONS (Saknas i din uppladdade fil) ---
+
+// 1. Fetch All Users
+export const fetchAllUsers = async (): Promise<User[]> => {
+    // OBS! Din RLS-policy måste tillåta administratörer/ägare att läsa alla profiler
+    if (!isSupabaseConfigured) return [];
+    try {
+        const { data, error } = await supabase
+            .from('profiles') 
+            .select('*');
+
+        if (error) throw error;
+
+        // Mappa Supabase-profiler till din interna User-typ
+        const users: User[] = data.map(profile => ({
+            id: profile.id,
+            email: profile.email,
+            name: profile.name,
+            role: profile.role,
+            clientRole: profile.client_role,
+            projectId: profile.project_id,
+            avatar: profile.avatar,
+        }));
+        
+        return users;
+    } catch (error) {
+        console.error("Error fetching all users:", error);
+        return [];
+    }
+}
+
+// 2. Update User
+export const updateUserInDB = async (user: Partial<User>): Promise<User | null> => {
+    if (!isSupabaseConfigured || !user.id) return null;
+    try {
+        // Mappa din camelCase-User-typ till snake_case för Supabase
+        const updateObject = {
+            name: user.name,
+            role: user.role,
+            client_role: user.clientRole,
+            project_id: user.projectId,
+            avatar: user.avatar,
+        };
+
+        const { data, error } = await supabase
+            .from('profiles')
+            .update(updateObject)
+            .eq('id', user.id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        
+        // Mappa tillbaka den uppdaterade profilen till User-typen
+        return data ? {
+            id: data.id,
+            email: data.email,
+            name: data.name,
+            role: data.role,
+            clientRole: data.client_role,
+            projectId: data.project_id,
+            avatar: data.avatar,
+        } as User : null;
+
+    } catch (error) {
+        console.error("Error updating user:", error);
+        return null;
+    }
+}
+
+// 3. Delete User
+export const deleteUserFromDB = async (userId: string): Promise<boolean> => {
+    if (!isSupabaseConfigured) return false;
+    try {
+        // OBS: Detta tar bort PROFILEN, inte Supabase Authentication-användaren.
+        // För att ta bort AUTH-användaren krävs admin-behörigheter, ofta via en Supabase Function.
+        const { error } = await supabase
+            .from('profiles')
+            .delete()
+            .eq('id', userId);
+
+        if (error) throw error;
+        
+        return true;
+    } catch (error) {
+        console.error("Error deleting user:", error);
+        return false;
+    }
+}
