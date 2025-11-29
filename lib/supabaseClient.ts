@@ -1,16 +1,23 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+// Använder Vercel/React-stil miljövariabler.
+// NOTERA: Dessa måste sättas i din Vercel-dashboard.
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.VITE_SUPABASE_PUBLIC_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLIC_ANON_KEY;
 
-export const isSupabaseConfigured = !!supabaseUrl && !!supabaseAnonKey;
+let supabase: SupabaseClient | null = null;
+let isSupabaseConfigured = false;
 
-if (!isSupabaseConfigured) {
-  console.error('Supabase konfiguration saknas!');
-  console.error('VITE_SUPABASE_URL:', supabaseUrl ? 'finns' : 'SAKNAS');
-  console.error('VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? 'finns' : 'SAKNAS');
+if (supabaseUrl && supabaseAnonKey) {
+    try {
+        supabase = createClient(supabaseUrl, supabaseAnonKey);
+        isSupabaseConfigured = true;
+        console.log("Supabase klient initialiserad.");
+    } catch (error) {
+        console.error("Kunde inte initialisera Supabase-klienten:", error);
+    }
+} else {
+    console.warn("Supabase miljövariabler saknas. Databasfunktionalitet är inaktiverad.");
 }
 
-export const supabase = isSupabaseConfigured 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
-  : ({ auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }) } } as any);
+export { supabase, isSupabaseConfigured };
