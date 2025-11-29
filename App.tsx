@@ -194,11 +194,20 @@ useEffect(() => {
 
   const handleLogout = async () => {
     if (isSupabaseConfigured) {
-        await supabase.auth.signOut();
+        // Supabase auth listener kommer att hantera rensningen av currentUser och AdminViewProject.
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+            console.error("Logout Error:", error);
+            // Fallback: rensa state manuellt om Supabase failar
+            setCurrentUser(null);
+            setAdminViewProject(null);
+        }
+    } else {
+        // Om Supabase inte är konfigurerad (Mock-läge)
+        setCurrentUser(null);
+        setAdminViewProject(null);
     }
-    setCurrentUser(null);
-    setAdminViewProject(null);
-  };
+};
 
   // --- FILTERED DATA FOR MANAGERS ---
   const visibleProjects = useMemo(() => {
@@ -366,13 +375,22 @@ useEffect(() => {
   // For brevity in this specific update, only ProjectStats persistence is fully implemented in DB as requested.
   // The rest rely on React State for the session duration.
 
-  const handleAddTask = (newTask: Task) => {
+ const handleAddTask = async (newTask: Task) => {
     if (currentUser?.role !== UserRole.OWNER && currentUser?.role !== UserRole.MANAGER) return;
-    setTasks(prev => [newTask, ...prev]);
-    if (newTask.assigneeId === currentUser?.id) {
-        addNotification('TASK', 'Ny uppgift', `Du har tilldelats: ${newTask.title}`);
-    } 
-  };
+    
+    // 1. Spara uppgiften i Supabase och få tillbaka det sparade objektet
+    const savedTask = await addTaskToDB(newTask);
+
+    if (savedTask) {
+        // 2. Uppdatera lokalt state med den sparade versionen
+        setTasks(prev => [savedTask, ...prev]);
+        
+        // 3. Lägg till notifikation
+        if (savedTask.assigneeId === currentUser?.id) {
+            addNotification('TASK', 'Ny uppgift', `Du har tilldelats: ${savedTask.title}`);
+        } 
+    }
+};
 
   const handleUpdateTask = (updatedTask: Task) => setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
   const handleDeleteTask = (taskId: string) => (currentUser?.role === UserRole.OWNER || currentUser?.role === UserRole.MANAGER) && setTasks(prev => prev.filter(t => t.id !== taskId));
@@ -392,18 +410,30 @@ useEffect(() => {
       setUsers(prev => prev.filter(u => u.id !== userId));
   };
 
-  const handleCreateProject = (projectName: string) => {
+  const handleCreateProject = async (projectName: string) => {
     if (currentUser?.role !== UserRole.OWNER && currentUser?.role !== UserRole.MANAGER) return;
-    const newProjectId = `p-${Date.now()}`;
-    const newProject: Project = { id: newProjectId, name: projectName, members: [] };
-    const newStats: ProjectStats = { projectId: newProjectId, projectName: projectName, streams: [], revenue: [], followers: [], mentions: [] };
-    setClientChannels(prev => [...prev, { id: 'general', name: 'General', projectId: newProjectId, icon: 'MessageSquare' }]);
-    setProjects(prev => [...prev, newProject]);
-    setStats(prev => [...prev, newStats]);
-    if (isSupabaseConfigured) {
-        saveProjectStats(newStats); // Save initial stats
+    
+    // Använd UUID för att garantera unikt ID och gör funktionen async
+    const newProjectId = crypto.randomUUID(); 
+    // Skapa ett objekt som matchar din databasstruktur
+    const newProject: Project = { id: newProjectId, name: projectName, members: [] }; 
+    
+    // 1. Spara projektet i Supabase och få tillbaka det sparade objektet
+    const savedProject = await createProject(newProject); 
+
+    if (savedProject) {
+        // 2. Uppdatera lokalt state med den sparade versionen
+        setProjects(prev => [...prev, savedProject]);
+        
+        // 3. Skapa och spara initial statistik för det nya projektet
+        const newStats: ProjectStats = { projectId: newProjectId, projectName: projectName, streams: [], revenue: [], followers: [], mentions: [] };
+        setStats(prev => [...prev, newStats]);
+        await saveProjectStats(newStats); 
+        
+        // 4. Skapa en allmän kanal för projektet (ej permanent än)
+        setClientChannels(prev => [...prev, { id: 'general', name: 'General', projectId: newProjectId, icon: 'MessageSquare' }]);
     }
-  };
+};
 
   const handleDeleteProject = (projectId: string) => {
       if (currentUser?.role !== UserRole.OWNER) return;
