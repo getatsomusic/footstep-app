@@ -4,7 +4,7 @@ import { PostgrestError } from '@supabase/supabase-js'; // Lägg till denna impo
 
 // --- SERVICE FUNCTIONS ---
 
-// 1. PROJECT STATS (Din befintliga kod, nu integrerad med isSupabaseConfigured)
+// 1. PROJECT STATS
 export const getProjectStats = async (projectId: string): Promise<ProjectStats | null> => {
     if (!isSupabaseConfigured) return null;
     try {
@@ -58,7 +58,7 @@ export const saveProjectStats = async (stats: ProjectStats): Promise<boolean> =>
     }
 };
 
-// 2. FETCH USER PROFILE (Ny: Viktig för att ladda User-objektet från profiles-tabellen)
+// 2. FETCH USER PROFILE (FIXAD: Hanterar null-värden)
 export async function fetchUserProfile(userId: string): Promise<User | null> {
     if (!isSupabaseConfigured) return null;
     try {
@@ -77,12 +77,12 @@ export async function fetchUserProfile(userId: string): Promise<User | null> {
             // Mappar databasprofilen (snake_case) till din app-User-typ (camelCase)
             return {
                 id: profile.id,
-                email: profile.email,
-                name: profile.name || 'Användare',
-                role: (profile.role as UserRole) || UserRole.CLIENT, // Måste kasta till din enum
-                clientRole: (profile.client_role as ClientRole) || ClientRole.GUEST, // Måste kasta till din enum
-                projectId: profile.project_id,
-                avatar: profile.avatar || '',
+                email: profile.email || '', // FIX: Fallback för null
+                name: profile.name || 'Användare', // FIX: Fallback för null
+                role: (profile.role as UserRole) || UserRole.CLIENT, // FIX: Fallback för null
+                clientRole: (profile.client_role as ClientRole) || ClientRole.GUEST, // FIX: Fallback för null
+                projectId: profile.project_id || null, // FIX: Tillåter null/saknat värde
+                avatar: profile.avatar || '', // FIX: Fallback för null
             } as User;
         }
         return null;
@@ -93,7 +93,7 @@ export async function fetchUserProfile(userId: string): Promise<User | null> {
 }
 
 
-// 3. PROJECT FUNCTIONS (Ny: För att ladda/spara projekt)
+// 3. PROJECT FUNCTIONS
 export async function fetchAllProjects(): Promise<Project[]> {
     if (!isSupabaseConfigured) return [];
     const { data, error } = await supabase
@@ -121,7 +121,7 @@ export async function createProject(newProject: Project): Promise<Project | null
     return data as Project;
 }
 
-// 4. TASK FUNCTIONS (Ny: För att ladda/spara uppgifter)
+// 4. TASK FUNCTIONS
 export async function fetchAllTasks(): Promise<Task[]> {
     if (!isSupabaseConfigured) return [];
     const { data, error } = await supabase
@@ -151,9 +151,9 @@ export async function addTaskToDB(task: Task): Promise<Task | null> {
     return data as Task;
 }
 
-// --- USER MANAGEMENT FUNCTIONS (Saknas i din uppladdade fil) ---
+// --- USER MANAGEMENT FUNCTIONS ---
 
-// 1. Fetch All Users
+// 1. Fetch All Users (FIXAD: Hanterar null-värden)
 export const fetchAllUsers = async (): Promise<User[]> => {
     // OBS! Din RLS-policy måste tillåta administratörer/ägare att läsa alla profiler
     if (!isSupabaseConfigured) return [];
@@ -167,12 +167,12 @@ export const fetchAllUsers = async (): Promise<User[]> => {
         // Mappa Supabase-profiler till din interna User-typ
         const users: User[] = data.map(profile => ({
             id: profile.id,
-            email: profile.email,
-            name: profile.name,
-            role: profile.role,
-            clientRole: profile.client_role,
-            projectId: profile.project_id,
-            avatar: profile.avatar,
+            email: profile.email || '', // FIX: Fallback för null
+            name: profile.name || 'Användare', // FIX: Fallback för null
+            role: (profile.role as UserRole) || UserRole.CLIENT, // FIX: Fallback för null
+            clientRole: (profile.client_role as ClientRole) || ClientRole.GUEST, // FIX: Fallback för null
+            projectId: profile.project_id || null, // FIX: Tillåter null/saknat värde
+            avatar: profile.avatar || '', // FIX: Fallback för null
         }));
         
         return users;
@@ -182,7 +182,7 @@ export const fetchAllUsers = async (): Promise<User[]> => {
     }
 }
 
-// 2. Update User
+// 2. Update User 
 export const updateUserInDB = async (user: Partial<User>): Promise<User | null> => {
     if (!isSupabaseConfigured || !user.id) return null;
     try {
