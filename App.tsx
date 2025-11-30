@@ -5,9 +5,9 @@ import { Auth } from './components/Auth';
     addTaskToDB, 
     createProject, 
     fetchUserProfile, 
-    fetchAllUsers, // Vi lägger till denna också för admins
-    updateUserInDB, // Ny funktion för att uppdatera användarprofil
-    deleteUserFromDB // Ny funktion för att ta bort användare
+    fetchAllUsers,
+    updateUserInDB,
+    deleteUserFromDB
 } from './services/databaseService';
 
 // --- INITIAL MOCK DATA ---
@@ -15,12 +15,12 @@ import { Auth } from './components/Auth';
 const INITIAL_CLIENT_CHANNELS: ClientChannel[] = [];
 const INITIAL_FILES: AppFile[] = [];
 
-// --- TOAST COMPONENT ---
+// --- TOAST COMPONENT (FIXED) ---
 const NotificationToast: React.FC<{ notifications: AppNotification[], onDismiss: (id: string) => void }> = ({ notifications, onDismiss }) => {
     return (
         <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 w-full max-w-sm pointer-events-none">
             {notifications.map(n => (
-                <div key={n.id} className="pointer-events-auto bg-black/80 backdrop-blur-xl text-white p-4 rounded-2xl shadow-2xl border border-white/10 animate-slide-up flex gap-3 items-start relative overflow-hidden group">
+                <div key={n.id} className="pointer-events-auto bg-black/80 backdrop-blur-xl text-white p-4 rounded-2xl shadow-2xl border border-white/10 flex gap-3 items-start relative overflow-hidden group" style={{animation: 'slideUp 0.3s ease-out'}}>
                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
                     <div className="p-2 bg-white/10 rounded-full shrink-0">
                         {n.type === 'MESSAGE' ? <MessageCircle size={18}/> : n.type === 'TASK' ? <CheckCircle size={18}/> : <Bell size={18}/>}
@@ -28,7 +28,7 @@ const NotificationToast: React.FC<{ notifications: AppNotification[], onDismiss:
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>([]); // In real app, fetch from DB
+  const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
   const [stats, setStats] = useState<ProjectStats[]>([]);
   const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS);
@@ -36,7 +36,7 @@ const App: React.FC = () => {
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
 
-        // 1. Fetch Profile from DB
+
         const { data: profile } = await supabase
             .from('profiles')
             .select('*')
@@ -44,7 +44,7 @@ const App: React.FC = () => {
             .single();
 
         if (profile) {
-            // Transform DB profile to App User
+
             const mappedUser: User = {
                 id: session.user.id,
                 email: session.user.email!,
@@ -52,17 +52,17 @@ const App: React.FC = () => {
                 clientRole: profile.client_role as ClientRole,
                 projectId: profile.project_id,
                 avatar: profile.avatar || '',
-                // Other fields would also be mapped from DB
+
             };
             setCurrentUser(mappedUser);
-            // Optionally fetch global users list if Admin
+
         } else {
-            // Fallback for first time login if trigger hasn't run or manual insertion needed
+
              const fallbackUser: User = {
                 id: session.user.id,
                 email: session.user.email!,
                 name: session.user.user_metadata?.full_name || 'Användare',
-                role: UserRole.CLIENT, // Default to lowest priv
+                role: UserRole.CLIENT,
                 avatar: '',
             };
             setCurrentUser(fallbackUser);
@@ -70,58 +70,58 @@ const App: React.FC = () => {
 
   // --- FETCH STATS ON LOAD ---
   useEffect(() => {
-      if (!isSupabaseConfigured) return;
+      if (!isSupabaseConfigured || !currentUser?.projectId) return;
 
-      // In a real scenario, we would loop through visible projects and fetch their stats
-      // For this demo/code update, we check if the user has a project and fetch it
-      if (currentUser?.projectId) {
-          getProjectStats(currentUser.projectId).then(data => {
-              if (data) {
-                  setStats(prev => {
-                      // replace or add
-                      const existing = prev.filter(s => s.projectId !== data.projectId);
-                      return [...existing, data];
-                  });
-              }
-          });
-      }
-  }, [currentUser]);
+      getProjectStats(currentUser.projectId).then(data => {
+          if (data) {
+              setStats(prev => {
+                  const existing = prev.filter(s => s.projectId !== data.projectId);
+                  return [...existing, data];
+              });
+          }
+      });
+  }, [currentUser?.projectId]);
 
-    // --- FETCH ALL INITIAL DATA (PROJECTS, TASKS, USERS) ---
-useEffect(() => {
-    if (!isSupabaseConfigured) return;
+
+
+
+
+
+  // --- FETCH ALL INITIAL DATA ---
+  useEffect(() => {
+    if (!isSupabaseConfigured || !currentUser) return;
 
     const loadInitialData = async () => {
-        // Kör alla hämtningar parallellt för snabb laddning
+
         const [projectsData, tasksData, usersData] = await Promise.all([
             fetchAllProjects(),
             fetchAllTasks(),
-            fetchAllUsers(), // Hämta alla användare/profiler
-            // Lägg till fetchAllEvents(), fetchAllMessages(), etc. här senare
+            fetchAllUsers(),
+
         ]);
 
         setProjects(projectsData);
         setTasks(tasksData);
-        setUsers(usersData); // Sätt den globala användarlistan
+        setUsers(usersData);
     };
 
-    if (currentUser && currentUser.role !== UserRole.CLIENT) {
-        // Endast admin/manager hämtar all data initialt
+    if (currentUser.role !== UserRole.CLIENT) {
+
         loadInitialData();
     }
-    // För klienter hämtas data baserat på deras projectId (gjort senare)
-}, [currentUser]);
+  }, [currentUser]);
 
 
+  // --- TOAST AUTO-DISMISS (FIXED) ---
   useEffect(() => {
-      if (toasts.length > 0) {
-          const timer = setTimeout(() => {
-              setToasts(prev => prev.slice(1));
-          }, 4000);
-          return () => clearTimeout(timer);
-      }
-  }, [toasts]);
-
+      if (toasts.length === 0) return;
+      
+      const timer = setTimeout(() => {
+          setToasts(prev => prev.slice(1));
+      }, 4000);
+      
+      return () => clearTimeout(timer);
+  }, [toasts.length]); // Changed dependency to toasts.length instead of toasts
 
   const addNotification = (type: 'MESSAGE' | 'TASK' | 'SYSTEM', title: string, message: string, linkTo?: string) => {
       const newNotif: AppNotification = {
@@ -129,20 +129,20 @@ useEffect(() => {
 
   const handleLogout = async () => {
     if (isSupabaseConfigured) {
-        // Supabase auth listener kommer att hantera rensningen av currentUser och AdminViewProject.
+
         const { error } = await supabase.auth.signOut();
         if (error) {
             console.error("Logout Error:", error);
-            // Fallback: rensa state manuellt om Supabase failar
+
             setCurrentUser(null);
             setAdminViewProject(null);
         }
     } else {
-        // Om Supabase inte är konfigurerad (Mock-läge)
+
         setCurrentUser(null);
         setAdminViewProject(null);
     }
-};
+  };
 
   // --- FILTERED DATA FOR MANAGERS ---
   const visibleProjects = useMemo(() => {
@@ -150,15 +150,15 @@ useEffect(() => {
           }
       });
 
-       const eventsToSearch = isClient 
+      const eventsToSearch = isClient 
         ? events.filter(e => e.projectId === currentUser.projectId)
         : visibleEvents;
 
-       eventsToSearch.forEach(e => {
-           if (e.title.toLowerCase().includes(q)) {
-               results.push({ id: e.id, type: 'EVENT', title: e.title, subtitle: e.startDate, data: e });
-           }
-       });
+      eventsToSearch.forEach(e => {
+          if (e.title.toLowerCase().includes(q)) {
+              results.push({ id: e.id, type: 'EVENT', title: e.title, subtitle: e.startDate, data: e });
+          }
+      });
 
       return results.slice(0, 10);
   };
@@ -166,12 +166,12 @@ useEffect(() => {
   const handleUpdateStats = async (projectId: string, type: 'revenue' | 'streams' | 'followers', value: any, dateOrPlatform?: string) => {
     if (currentUser?.role !== UserRole.OWNER && currentUser?.role !== UserRole.MANAGER) return;
 
-    // We need to clone the stats state to update locally, then save to DB
+
     const currentProjectStatsIndex = stats.findIndex(s => s.projectId === projectId);
     let updatedStats: ProjectStats;
 
     if (currentProjectStatsIndex === -1) {
-        // Create new stats object if doesn't exist (edge case)
+
         updatedStats = {
             projectId,
             projectName: projects.find(p => p.id === projectId)?.name || 'Unknown',
@@ -179,7 +179,7 @@ useEffect(() => {
         updatedStats = { ...stats[currentProjectStatsIndex] };
     }
 
-    // Apply updates locally
+
     if (type === 'revenue') {
         const exists = updatedStats.revenue.find(r => r.month === dateOrPlatform);
         updatedStats.revenue = exists 
@@ -187,18 +187,18 @@ useEffect(() => {
     } 
     else if (type === 'streams') {
         const exists = updatedStats.streams.find(st => st.date === dateOrPlatform);
-            updatedStats.streams = exists 
+        updatedStats.streams = exists 
             ? updatedStats.streams.map(st => st.date === dateOrPlatform ? { ...st, value: Number(value) } : st)
             : [...updatedStats.streams, { date: dateOrPlatform || 'Unknown', value: Number(value) }];
     }
     else if (type === 'followers') {
-            const exists = updatedStats.followers.find(f => f.platform === dateOrPlatform);
-            updatedStats.followers = exists 
+        const exists = updatedStats.followers.find(f => f.platform === dateOrPlatform);
+        updatedStats.followers = exists 
             ? updatedStats.followers.map(f => f.platform === dateOrPlatform ? { ...f, count: Number(value) } : f)
             : [...updatedStats.followers, { platform: dateOrPlatform || 'Unknown', count: Number(value) }];
     }
 
-    // Save to State
+
     setStats(prev => {
         if (currentProjectStatsIndex === -1) return [...prev, updatedStats];
         const newArr = [...prev];
@@ -206,32 +206,32 @@ useEffect(() => {
         return newArr;
     });
 
-    // Save to Database
+
     if (isSupabaseConfigured) {
         await saveProjectStats(updatedStats);
     }
   }
 
-  // ... (Other handlers like handleAddTask, handleSendMessage, etc. remain similar but would eventually need their own DB calls) ...
-  // For brevity in this specific update, only ProjectStats persistence is fully implemented in DB as requested.
-  // The rest rely on React State for the session duration.
+  const handleAddTask = async (newTask: Task) => {
 
- const handleAddTask = async (newTask: Task) => {
+
+
+
     if (currentUser?.role !== UserRole.OWNER && currentUser?.role !== UserRole.MANAGER) return;
 
-    // 1. Spara uppgiften i Supabase och få tillbaka det sparade objektet
+
     const savedTask = await addTaskToDB(newTask);
 
     if (savedTask) {
-        // 2. Uppdatera lokalt state med den sparade versionen
+
         setTasks(prev => [savedTask, ...prev]);
 
-        // 3. Lägg till notifikation
+
         if (savedTask.assigneeId === currentUser?.id) {
             addNotification('TASK', 'Ny uppgift', `Du har tilldelats: ${savedTask.title}`);
-        } 
+        } 
     }
-};
+  };
 
   const handleUpdateTask = (updatedTask: Task) => setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
   const handleDeleteTask = (taskId: string) => (currentUser?.role === UserRole.OWNER || currentUser?.role === UserRole.MANAGER) && setTasks(prev => prev.filter(t => t.id !== taskId));
@@ -239,32 +239,32 @@ useEffect(() => {
   const handleCreateProject = async (projectName: string) => {
     if (currentUser?.role !== UserRole.OWNER && currentUser?.role !== UserRole.MANAGER) return;
 
-    // Använd UUID för att garantera unikt ID och gör funktionen async
+
     const newProjectId = crypto.randomUUID(); 
-    // Skapa ett objekt som matchar din databasstruktur
+
     const newProject: Project = { id: newProjectId, name: projectName, members: [] }; 
 
-    // 1. Spara projektet i Supabase och få tillbaka det sparade objektet
+
     const savedProject = await createProject(newProject); 
 
     if (savedProject) {
-        // 2. Uppdatera lokalt state med den sparade versionen
+
         setProjects(prev => [...prev, savedProject]);
 
-        // 3. Skapa och spara initial statistik för det nya projektet
+
         const newStats: ProjectStats = { projectId: newProjectId, projectName: projectName, streams: [], revenue: [], followers: [], mentions: [] };
         setStats(prev => [...prev, newStats]);
         await saveProjectStats(newStats); 
 
-        // 4. Skapa en allmän kanal för projektet (ej permanent än)
+
         setClientChannels(prev => [...prev, { id: 'general', name: 'General', projectId: newProjectId, icon: 'MessageSquare' }]);
     }
-};
+  };
 
   const handleDeleteProject = (projectId: string) => {
       if (currentUser?.role !== UserRole.OWNER) return;
       setProjects(prev => prev.filter(p => p.id !== projectId));
-      // In real app, delete from DB
+
   };
 
   const handleAddUser = (newUser: any) => {
